@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Settings - Python Project Analyzer</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script>
+      $(document).ready(function(){
+        $('#get-models').click(function(){
+          var apiKey = $('#api_key').val();
+          var baseUrl = $('#base_url').val();
+          if(apiKey === '' || baseUrl === ''){
+            alert('Please provide API Key and Base URL.');
+            return;
+          }
+          $.post('{{ url_for("get_models") }}', {api_key: apiKey, base_url: baseUrl}, function(data){
+            if(data.error){
+              alert('Error: ' + data.error);
+            } else {
+              var modelSelect = $('#model');
+              modelSelect.empty();
+              data.models.forEach(function(model){
+                modelSelect.append(new Option(model, model));
+              });
+            }
+          });
+        });
+
+        $('#toggle-api-key').click(function(){
+          var apiKeyInput = $('#api_key');
+          var icon = $('#toggle-api-key i');
+          if (apiKeyInput.attr('type') === 'password') {
+            apiKeyInput.attr('type', 'text');
+            icon.removeClass('fa-eye').addClass('fa-eye-slash');
+          } else {
+            apiKeyInput.attr('type', 'password');
+            icon.removeClass('fa-eye-slash').addClass('fa-eye');
+          }
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <div class="container mt-5">
+      <h1 class="text-center">Settings</h1>
+      <form method="post" class="mt-4">
+        <div class="form-group">
+          <label for="base_url">OpenAI API Base URL</label>
+          <input type="text" class="form-control" id="base_url" name="base_url" value="{{ base_url }}" required>
+        </div>
+        <div class="form-group">
+          <label for="api_key">OpenAI API Key</label>
+          <div class="input-group">
+            <input type="password" class="form-control" id="api_key" name="api_key" value="{{ api_key }}" required>
+            <div class="input-group-append">
+              <button type="button" class="btn btn-outline-secondary" id="toggle-api-key">
+                <i class="fa fa-eye"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="model">Model</label>
+          <div class="input-group">
+            <select class="form-control" id="model" name="model">
+              <option value="{{ model }}">{{ model }}</option>
+            </select>
+            <div class="input-group-append">
+              <button type="button" class="btn btn-outline-secondary" id="get-models">Get Models</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="output_language">Output Language</label>
+          <select class="form-control" id="output_language" name="output_language">
+            <option value="en" {% if output_language == 'en' %}selected{% endif %}>English</option>
+            <option value="zh" {% if output_language == 'zh' %}selected{% endif %}>Chinese</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="max_tokens">Max Tokens</label>
+          <input type="number" class="form-control" id="max_tokens" name="max_tokens" value="{{ max_tokens }}" required>
+        </div>
+        <div class="form-group">
+          <label for="temperature">Temperature</label>
+          <input type="number" step="0.01" class="form-control" id="temperature" name="temperature" value="{{ temperature }}" required>
+        </div>
+        <div class="form-group">
+          <label for="timeout">Timeout (seconds)</label>
+          <input type="number" class="form-control" id="timeout" name="timeout" value="{{ timeout }}" required>
+        </div>
+        <div class="form-group">
+          <label for="system_message">System Message</label>
+          <textarea class="form-control" id="system_message" name="system_message" rows="3" required>{{ system_message }}</textarea>
+        </div>
+        <div class="form-group">
+          <label for="max_concurrency">Max Concurrency</label>
+          <input type="number" class="form-control" id="max_concurrency" name="max_concurrency" value="{{ max_concurrency }}" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Save Settings</button>
+      </form>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+  </body>
+</html>
