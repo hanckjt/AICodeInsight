@@ -42,13 +42,34 @@ class OpenAIConfig:
         return models_list
 
     def openai_chat_completion(self, messages):
-        response = self.get_client().chat.completions.create(
-            messages=messages, model=self.model, max_tokens=self.max_tokens, stream=self.stream, temperature=self.temperature, top_p=self.top_p, timeout=self.timeout
-        )
+        try:
+            response = self.get_client().chat.completions.create(
+                messages=messages,
+                model=self.model,
+                max_tokens=self.max_tokens,
+                stream=self.stream,
+                temperature=self.temperature,
+                top_p=self.top_p,
+                timeout=self.timeout,
+            )
+            return response
+        except openai.OpenAIError as e:
+            raise Exception(f"OpenAI API Error: {str(e)}")
 
-        return response
-
-    def chat(self, content: str):
+    def chat(self, content: str, callback=None):
         messages = [{'role': 'system', 'content': self.system_message}, {'role': 'user', 'content': content}]
         response = self.openai_chat_completion(messages)
-        return response.choices[0].message.content
+        if self.stream:
+            streaming_text = ""
+            for chunk in response:
+                if chunk.choices[0].finish_reason == 'stop':
+                    break
+                chunk_text = chunk.choices[0].delta.content
+                if chunk_text:
+                    streaming_text += chunk_text
+                    if callback:
+                        callback(chunk_text)
+            response_msg = streaming_text
+        else:
+            response_msg = response.choices[0].message['content']
+        return response_msg

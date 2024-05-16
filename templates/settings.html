@@ -100,7 +100,15 @@
           <label for="max_concurrency">Max Concurrency</label>
           <input type="number" class="form-control" id="max_concurrency" name="max_concurrency" value="{{ max_concurrency }}" required>
         </div>
-        <button type="submit" class="btn btn-primary btn-block">Save Settings</button>
+        <div class="form-group">
+          <label for="file_filters">File Filters (comma-separated)</label>
+          <input type="text" class="form-control" id="file_filters" name="file_filters" value="{{ file_filters }}" required>
+        </div>
+        <div class="form-check">
+          <input type="checkbox" class="form-check-input" id="stream" name="stream" {% if stream %}checked{% endif %}>
+          <label for="stream" class="form-check-label">Enable Stream</label>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block mt-4">Save Settings</button>
       </form>
     </div>
 

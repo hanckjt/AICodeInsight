@@ -10,21 +10,21 @@
   <body>
     <div class="container mt-5">
       <h1 class="text-center">Python Project Analyzer</h1>
+      <p class="text-center">Current Model: {{ model }}</p>
       <form method="post" enctype="multipart/form-data" class="mt-4">
         <div class="form-group">
-          <label for="project_path">Project Path</label>
-          <input type="text" class="form-control" id="project_path" name="project_path" placeholder="Enter the project path">
+          <label for="project_path">Project Path or Git URL</label>
+          <input type="text" class="form-control" id="project_path" name="project_path" required>
         </div>
         <div class="form-group">
-          <label for="project_zip">Project ZIP File</label>
+          <label for="project_zip">Or Upload a ZIP File</label>
           <input type="file" class="form-control-file" id="project_zip" name="project_zip">
         </div>
-        <button type="submit" class="btn btn-primary btn-block">Analyze Project</button>
+        <button type="submit" class="btn btn-primary btn-block">Start Analysis</button>
       </form>
-      <a href="{{ url_for('settings') }}" class="btn btn-secondary btn-block mt-2">Settings</a>
+      <a href="{{ url_for('settings') }}" class="btn btn-secondary btn-block mt-4">Settings</a>
     </div>
-
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
   </body>

@@ -11,11 +11,22 @@
     <script>
       $(document).ready(function(){
         var socket = io();
-        
+
+        socket.on('total_files', function(data) {
+          var totalFiles = data.total;
+          $('#progress-bar').attr('aria-valuemax', totalFiles).text('0% (0/' + totalFiles + ')');
+        });
+
+        socket.on('current_file', function(data) {
+          var file = data.file;
+          var index = data.index;
+          var total = $('#progress-bar').attr('aria-valuemax');
+          $('#current-file').text('Processing file: ' + file + ' (' + index + '/' + total + ')');
+        });
+
         socket.on('progress', function(data) {
-          $('#progress').append('<li>Processing file: ' + data.file + '</li>');
           var progress = (data.index / data.total) * 100;
-          $('#progress-bar').css('width', progress + '%').attr('aria-valuenow', progress).text(progress.toFixed(2) + '%');
+          $('#progress-bar').css('width', progress + '%').attr('aria-valuenow', progress).text(progress.toFixed(2) + '% (' + data.index + '/' + data.total + ')');
         });
 
         socket.on('analysis_complete', function(data) {
@@ -35,6 +46,10 @@
           $('#stop-button').hide();
         });
 
+        socket.on('streaming', function(data) {
+          $('#streaming-content').text(data.content);
+        });
+
         $('#stop-button').click(function(){
           socket.emit('stop_analysis');
         });
@@ -49,9 +64,11 @@
     <div class="container mt-5">
       <h1 class="text-center">Analysis Progress</h1>
       <div class="progress">
-        <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+        <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0% (0/0)</div>
       </div>
       <ul id="progress" class="list-group mt-4"></ul>
+      <div id="current-file" class="mt-4"></div>
+      <div id="streaming-content" class="mt-4"></div>
       <button id="stop-button" class="btn btn-danger btn-block mt-4">Stop Analysis</button>
       <button id="retry-button" class="btn btn-primary btn-block mt-4" style="display: none;">Retry</button>
     </div>

@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai_config import OpenAIConfig
 import markdown
 from markupsafe import Markup
+from git import Repo, GitCommandError
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # 使用一个随机的密钥
@@ -21,11 +22,12 @@ total_files = 0
 
 
 class ProjectAnalyzer:
-    def __init__(self, openai_config, project_path=None, project_zip=None, output_language='en'):
+    def __init__(self, openai_config, project_path=None, project_zip=None, output_language='en', file_filters=['*.py']):
         self.openai_config = openai_config
         self.project_path = project_path
         self.project_zip = project_zip
         self.output_language = output_language
+        self.file_filters = file_filters
 
     def extract_zip(self):
         if self.project_zip:
@@ -33,22 +35,50 @@ class ProjectAnalyzer:
                 self.project_path = os.path.join(UPLOAD_FOLDER, os.path.basename(self.project_zip).replace('.zip', ''))
                 zip_ref.extractall(self.project_path)
 
+    def clone_or_pull_repo(self, git_url):
+        repo_dir = os.path.join(UPLOAD_FOLDER, os.path.basename(git_url).replace('.git', ''))
+        if os.path.exists(repo_dir):
+            try:
+                repo = Repo(repo_dir)
+                repo.remotes.origin.pull()
+            except GitCommandError as e:
+                raise Exception(f"Error pulling repo: {str(e)}")
+        else:
+            try:
+                repo = Repo.clone_from(git_url, repo_dir)
+            except GitCommandError as e:
+                raise Exception(f"Error cloning repo: {str(e)}")
+        self.project_path = repo_dir
+
     def analyze_file(self, file_path):
         with open(file_path, 'r', encoding='utf-8') as file:
             code = file.read()
 
         prompt = f"Analyze the following Python code and provide a summary in {self.output_language}:\n\n{code}"
-        response = self.openai_config.chat(prompt)
 
-        return response
+        def stream_callback(chunk_text):
+            socketio.emit('streaming', {'file': file_path, 'content': chunk_text})
+
+        try:
+            if self.openai_config.stream:
+                return self.openai_config.chat(prompt, callback=stream_callback)
+            else:
+                return self.openai_config.chat(prompt)
+        except Exception as e:
+            socketio.emit('error', {'message': str(e)})
+            return None
 
     def analyze_project(self, max_concurrency):
         if self.project_zip:
             self.extract_zip()
+        elif self.project_path.startswith(('http://', 'https://', 'git@')):
+            self.clone_or_pull_repo(self.project_path)
 
         summaries = {}
         global total_files
-        files = list(glob.glob(f"{self.project_path}/**/*.py", recursive=True))
+        files = []
+        for file_filter in self.file_filters:
+            files.extend(glob.glob(f"{self.project_path}/**/{file_filter}", recursive=True))
         total_files = len(files)
 
         with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
@@ -66,9 +96,13 @@ class ProjectAnalyzer:
                     return None, None
 
         if analyzing:
-            project_summary = self.openai_config.chat(
-                f"Analyze the following Python project and provide a summary based on these modules in {self.output_language}:\n\n{summaries}"
-            )
+            try:
+                project_summary = self.openai_config.chat(
+                    f"Analyze the following Python project and provide a summary based on these modules in {self.output_language}:\n\n{summaries}"
+                )
+            except Exception as e:
+                socketio.emit('error', {'message': str(e)})
+                return None, None
         else:
             project_summary = "Analysis stopped."
 
@@ -98,6 +132,8 @@ def settings():
         session['timeout'] = int(request.form['timeout'])
         session['system_message'] = request.form['system_message']
         session['max_concurrency'] = int(request.form['max_concurrency'])
+        session['file_filters'] = request.form['file_filters'].split(',')
+        session['stream'] = 'stream' in request.form
         return redirect(url_for('index'))
 
     return render_template(
@@ -111,6 +147,8 @@ def settings():
         timeout=session.get('timeout', 10),
         system_message=session.get('system_message', 'You are a helpful assistant.'),
         max_concurrency=session.get('max_concurrency', 5),
+        file_filters=','.join(session.get('file_filters', ['*.py'])),
+        stream=session.get('stream', False),
     )
 
 
@@ -141,6 +179,8 @@ def index():
         timeout = session.get('timeout', 10)
         system_message = session.get('system_message', 'You are a helpful assistant.')
         max_concurrency = session.get('max_concurrency', 5)
+        file_filters = session.get('file_filters', ['*.py'])
+        stream = session.get('stream', False)
         project_path = request.form.get('project_path')
         project_zip = request.files.get('project_zip')
 
@@ -153,15 +193,22 @@ def index():
         global analyzing
         analyzing = True
         openai_config = OpenAIConfig(
-            api_key=api_key, base_url=base_url, model=model, max_tokens=max_tokens, temperature=temperature, timeout=timeout, system_message=system_message
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout=timeout,
+            system_message=system_message,
+            stream=stream,
         )
-        analyzer = ProjectAnalyzer(openai_config, project_path, project_zip_path, output_language=output_language)
+        analyzer = ProjectAnalyzer(openai_config, project_path, project_zip_path, output_language=output_language, file_filters=file_filters)
         thread = threading.Thread(target=analyze_project_thread, args=(analyzer, max_concurrency, request.host_url))
         thread.start()
 
         return redirect(url_for('progress'))
 
-    return render_template('index.html')
+    return render_template('index.html', model=session.get('model', 'gpt-4'))
 
 
 @app.route('/progress')
