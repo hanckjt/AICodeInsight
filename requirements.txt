@@ -1,0 +1,6 @@
+Flask
+Flask-SocketIO
+GitPython
+markdown
+markupsafe
+openai

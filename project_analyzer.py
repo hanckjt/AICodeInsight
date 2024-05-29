@@ -9,48 +9,47 @@ from openai_config import OpenAIConfig
 import markdown
 from markupsafe import Markup
 from git import Repo, GitCommandError
+from pathlib import Path
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'  # 使用一个随机的密钥
+app.secret_key = 'your_secret_key'
 socketio = SocketIO(app)
-UPLOAD_FOLDER = 'uploads'
-SUMMARY_FOLDER = 'summaries'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(SUMMARY_FOLDER, exist_ok=True)
+UPLOAD_FOLDER = Path('uploads')
+SUMMARY_FOLDER = Path('summaries')
+UPLOAD_FOLDER.mkdir(exist_ok=True)
+SUMMARY_FOLDER.mkdir(exist_ok=True)
 analyzing = False
 total_files = 0
 
 
 class ProjectAnalyzer:
-    def __init__(self, openai_config, project_path=None, project_zip=None, output_language='en', file_filters=['*.py']):
+    def __init__(self, openai_config: OpenAIConfig, project_path: Path=None, project_zip_path=None, output_language: str='en', file_filters: list=['*.py']):
         self.openai_config = openai_config
         self.project_path = project_path
-        self.project_zip = project_zip
+        self.project_zip_path = project_zip_path
         self.output_language = output_language
         self.file_filters = file_filters
 
     def extract_zip(self):
-        if self.project_zip:
-            with zipfile.ZipFile(self.project_zip, 'r') as zip_ref:
-                self.project_path = os.path.join(UPLOAD_FOLDER, os.path.basename(self.project_zip).replace('.zip', ''))
+        if self.project_zip_path:
+            with zipfile.ZipFile(self.project_zip_path, 'r') as zip_ref:
+                self.project_path = os.path.join(UPLOAD_FOLDER, os.path.basename(self.project_zip_path).replace('.zip', ''))
                 zip_ref.extractall(self.project_path)
 
-    def clone_or_pull_repo(self, git_url):
+    def git_repo(self, git_url: str):
         repo_dir = os.path.join(UPLOAD_FOLDER, os.path.basename(git_url).replace('.git', ''))
-        if os.path.exists(repo_dir):
-            try:
+        try:
+            if os.path.exists(repo_dir):
                 repo = Repo(repo_dir)
                 repo.remotes.origin.pull()
-            except GitCommandError as e:
-                raise Exception(f"Error pulling repo: {str(e)}")
-        else:
-            try:
+            else:
                 repo = Repo.clone_from(git_url, repo_dir)
-            except GitCommandError as e:
-                raise Exception(f"Error cloning repo: {str(e)}")
+        except GitCommandError as e:
+                raise Exception(f"Error operate git repo: {str(e)}")
+
         self.project_path = repo_dir
 
-    def analyze_file(self, file_path):
+    def analyze_file(self, file_path: Path):
         with open(file_path, 'r', encoding='utf-8') as file:
             code = file.read()
 
@@ -68,11 +67,11 @@ class ProjectAnalyzer:
             socketio.emit('error', {'message': str(e)})
             return None
 
-    def analyze_project(self, max_concurrency):
-        if self.project_zip:
+    def analyze_project(self, max_concurrency: int):
+        if self.project_zip_path:
             self.extract_zip()
         elif self.project_path.startswith(('http://', 'https://', 'git@')):
-            self.clone_or_pull_repo(self.project_path)
+            self.git_repo(self.project_path)
 
         summaries = {}
         global total_files
@@ -236,7 +235,7 @@ def stop_analysis():
     emit('analysis_stopped')
 
 
-def analyze_project_thread(analyzer, max_concurrency, host_url):
+def analyze_project_thread(analyzer: ProjectAnalyzer, max_concurrency, host_url):
     with app.app_context():
         project_summary, module_summaries = analyzer.analyze_project(max_concurrency)
         if project_summary is None and module_summaries is None:
