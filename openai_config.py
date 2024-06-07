@@ -56,7 +56,7 @@ class OpenAIConfig:
         except openai.OpenAIError as e:
             raise Exception(f"OpenAI API Error: {str(e)}")
 
-    def chat(self, content: str, callback=None):
+    def chat(self, content: str, callback=None) -> tuple[str, int]:
         messages = [{'role': 'system', 'content': self.system_message}, {'role': 'user', 'content': content}]
         response = self.openai_chat_completion(messages)
         if self.stream:
@@ -70,6 +70,10 @@ class OpenAIConfig:
                     if callback:
                         callback(chunk_text)
             response_msg = streaming_text
+            total_tokens = chunk.usage.total_tokens
+            
         else:
-            response_msg = response.choices[0].message['content']
-        return response_msg
+            response_msg = response.choices[0].message.content
+            total_tokens = response.usage.total_tokens
+            
+        return response_msg, total_tokens

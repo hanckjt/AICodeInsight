@@ -10,6 +10,7 @@ import markdown
 from markupsafe import Markup
 from git import Repo, GitCommandError
 from pathlib import Path
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
@@ -23,21 +24,22 @@ total_files = 0
 
 
 class ProjectAnalyzer:
-    def __init__(self, openai_config: OpenAIConfig, project_path: Path=None, project_zip_path=None, output_language: str='en', file_filters: list=['*.py']):
+    def __init__(self, openai_config: OpenAIConfig, project_path: Path = None, project_zip_path=None, output_language: str = 'en', file_filters: list = ['*.py']):
         self.openai_config = openai_config
         self.project_path = project_path
         self.project_zip_path = project_zip_path
         self.output_language = output_language
         self.file_filters = file_filters
 
-    def extract_zip(self):
-        if self.project_zip_path:
-            with zipfile.ZipFile(self.project_zip_path, 'r') as zip_ref:
-                self.project_path = os.path.join(UPLOAD_FOLDER, os.path.basename(self.project_zip_path).replace('.zip', ''))
-                zip_ref.extractall(self.project_path)
+    def extract_zip(self, zip_path: Path):
+        zip_path = Path(zip_path)
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            self.project_path = UPLOAD_FOLDER / zip_path.stem
+            zip_ref.extractall(self.project_path)
 
     def git_repo(self, git_url: str):
-        repo_dir = os.path.join(UPLOAD_FOLDER, os.path.basename(git_url).replace('.git', ''))
+        git_url = Path(git_url)
+        repo_dir = UPLOAD_FOLDER / git_url.stem
         try:
             if os.path.exists(repo_dir):
                 repo = Repo(repo_dir)
@@ -45,7 +47,7 @@ class ProjectAnalyzer:
             else:
                 repo = Repo.clone_from(git_url, repo_dir)
         except GitCommandError as e:
-                raise Exception(f"Error operate git repo: {str(e)}")
+            raise Exception(f'Error operate git repo: {str(e)}')
 
         self.project_path = repo_dir
 
@@ -53,23 +55,20 @@ class ProjectAnalyzer:
         with open(file_path, 'r', encoding='utf-8') as file:
             code = file.read()
 
-        prompt = f"Analyze the following Python code and provide a summary in {self.output_language}:\n\n{code}"
+        prompt = f'Analyze the following Python code and provide a summary in {self.output_language}:\n\n{code}'
 
         def stream_callback(chunk_text):
             socketio.emit('streaming', {'file': file_path, 'content': chunk_text})
 
         try:
-            if self.openai_config.stream:
-                return self.openai_config.chat(prompt, callback=stream_callback)
-            else:
-                return self.openai_config.chat(prompt)
+            return self.openai_config.chat(prompt, callback=stream_callback)[0]
         except Exception as e:
             socketio.emit('error', {'message': str(e)})
             return None
 
     def analyze_project(self, max_concurrency: int):
         if self.project_zip_path:
-            self.extract_zip()
+            self.extract_zip(self.project_zip_path)
         elif self.project_path.startswith(('http://', 'https://', 'git@')):
             self.git_repo(self.project_path)
 
@@ -77,7 +76,7 @@ class ProjectAnalyzer:
         global total_files
         files = []
         for file_filter in self.file_filters:
-            files.extend(glob.glob(f"{self.project_path}/**/{file_filter}", recursive=True))
+            files.extend(glob.glob(f'{self.project_path}/**/{file_filter}', recursive=True))
         total_files = len(files)
 
         with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
@@ -96,23 +95,24 @@ class ProjectAnalyzer:
 
         if analyzing:
             try:
-                project_summary = self.openai_config.chat(
-                    f"Analyze the following Python project and provide a summary based on these modules in {self.output_language}:\n\n{summaries}"
+                project_summary, tokens = self.openai_config.chat(
+                    f'Analyze the following Python project and provide a summary based on these modules in {self.output_language}:\n\n{summaries}'
                 )
             except Exception as e:
                 socketio.emit('error', {'message': str(e)})
                 return None, None
         else:
-            project_summary = "Analysis stopped."
+            project_summary = 'Analysis stopped.'
 
         return project_summary, summaries
 
     def save_summary_as_markdown(self, project_summary, module_summaries):
-        markdown_content = f"# Project Summary\n\n{project_summary}\n\n## Module Summaries\n"
+        markdown_content = f'# Project Summary\n\n{project_summary}\n\n## Module Summaries\n'
         for module, summary in module_summaries.items():
-            markdown_content += f"\n### {module}\n{summary}\n"
+            markdown_content += f'\n### {module}\n{summary}\n'
 
-        summary_file = os.path.join(SUMMARY_FOLDER, 'project_summary.md')
+        time_str = datetime.now().strftime('%Y%m%d%H%M%S')
+        summary_file = os.path.join(SUMMARY_FOLDER, f'project_summary_{time_str}.md')
         with open(summary_file, 'w', encoding='utf-8') as file:
             file.write(markdown_content)
 
@@ -184,10 +184,13 @@ def index():
         project_zip = request.files.get('project_zip')
 
         if project_zip:
-            project_zip_path = os.path.join(UPLOAD_FOLDER, project_zip.filename)
+            project_zip_path = UPLOAD_FOLDER / project_zip.filename
             project_zip.save(project_zip_path)
         else:
             project_zip_path = None
+            if project_path == None or project_path == '':
+                socketio.emit('error', {'message': 'Please provide a project path or upload a zip file.'})
+                return redirect(url_for('index'))
 
         global analyzing
         analyzing = True
@@ -241,8 +244,8 @@ def analyze_project_thread(analyzer: ProjectAnalyzer, max_concurrency, host_url)
         if project_summary is None and module_summaries is None:
             return
         summary_file = analyzer.save_summary_as_markdown(project_summary, module_summaries)
-        download_url = f"{host_url}download_summary/{os.path.basename(summary_file)}"
-        view_url = f"{host_url}view_summary/{os.path.basename(summary_file)}"
+        download_url = f'{host_url}download_summary/{os.path.basename(summary_file)}'
+        view_url = f'{host_url}view_summary/{os.path.basename(summary_file)}'
         socketio.emit('analysis_complete', {'summary_file': download_url, 'view_file': view_url})
 
 
